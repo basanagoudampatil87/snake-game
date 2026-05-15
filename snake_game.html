@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Snake Game</title>
+
+<!-- =====================================================================
+  SNAKE GAME — Full Source Code
+  Structure:
+    1. CSS Styles
+    2. HTML Layout
+    3. JavaScript — Game Logic
+       a. Constants & State
+       b. Drawing Functions
+       c. Game Loop
+       d. Input Handling
+       e. Start / Pause / Restart
+  ===================================================================== -->
+
+<style>
+  /* ── 1. GLOBAL STYLES ─────────────────────────────────────── */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d0d0d;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  h1 {
+    font-size: 2rem;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    color: #7f77dd;
+    margin-bottom: 1.5rem;
+  }
+
+  /* ── 2. SCOREBOARD ───────────────────────────────────────── */
+  #scoreboard {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 1rem;
+  }
+
+  .score-box {
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.5rem 1.5rem;
+    text-align: center;
+  }
+
+  .score-box .label {
+    font-size: 11px;
+    color: #666;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .score-box .value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #7f77dd;
+  }
+
+  /* ── 3. CANVAS (the game board) ──────────────────────────── */
+  canvas {
+    display: block;
+    border: 2px solid #333;
+    border-radius: 4px;
+    background: #111;
+  }
+
+  /* ── 4. STATUS MESSAGE ───────────────────────────────────── */
+  #msg {
+    margin-top: 0.75rem;
+    font-size: 13px;
+    color: #555;
+    letter-spacing: 1px;
+    height: 20px;
+  }
+
+  /* ── 5. BUTTONS ──────────────────────────────────────────── */
+  #controls {
+    display: flex;
+    gap: 12px;
+    margin-top: 1rem;
+  }
+
+  button {
+    background: transparent;
+    border: 1px solid #444;
+    color: #ccc;
+    padding: 8px 24px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  button:hover:not(:disabled) {
+    background: #1a1a2e;
+    border-color: #7f77dd;
+    color: #7f77dd;
+  }
+
+  button:disabled { opacity: 0.3; cursor: default; }
+
+  /* ── 6. ARROW PAD (mobile controls) ─────────────────────── */
+  #arrow-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 48px);
+    grid-template-rows: repeat(2, 48px);
+    gap: 6px;
+    margin-top: 1.25rem;
+  }
+
+  #arrow-pad button {
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    font-size: 20px;
+  }
+</style>
+</head>
+
+<body>
+
+<!-- =====================================================================
+  HTML LAYOUT
+  ===================================================================== -->
+<h1>Snake</h1>
+
+<!-- Scoreboard: three metric boxes -->
+<div id="scoreboard">
+  <div class="score-box">
+    <div class="label">Score</div>
+    <div class="value" id="score">0</div>
+  </div>
+  <div class="score-box">
+    <div class="label">Best</div>
+    <div class="value" id="best">0</div>
+  </div>
+  <div class="score-box">
+    <div class="label">Level</div>
+    <div class="value" id="level">1</div>
+  </div>
+</div>
+
+<!-- The game canvas — all game graphics are drawn here in JS -->
+<canvas id="gameCanvas" width="360" height="360"></canvas>
+
+<div id="msg">Press Start or tap an arrow key to play</div>
+
+<!-- Start / Pause buttons -->
+<div id="controls">
+  <button id="startBtn">Start</button>
+  <button id="pauseBtn" disabled>Pause</button>
+</div>
+
+<!-- On-screen arrow pad for mobile -->
+<div id="arrow-pad">
+  <div></div>
+  <button id="up"    aria-label="Move Up">↑</button>
+  <div></div>
+  <button id="left"  aria-label="Move Left">←</button>
+  <button id="down"  aria-label="Move Down">↓</button>
+  <button id="right" aria-label="Move Right">→</button>
+</div>
+
+
+<script>
+// =====================================================================
+//  JAVASCRIPT — GAME LOGIC
+// =====================================================================
+
+
+// ── a. CONSTANTS & STATE ───────────────────────────────────────────
+
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');   // 2D drawing context
+
+const COLS = 18;    // number of columns in the grid
+const ROWS = 18;    // number of rows in the grid
+const CELL = 20;    // pixel size of each cell
+const GAP  = 1;     // pixel gap between cells for grid effect
+
+// Game state variables — these change as the game progresses
+let snake;       // Array of {x, y} objects — snake[0] is the head
+let dir;         // Current direction the snake is moving {x, y}
+let nextDir;     // Buffered direction (applied on next tick)
+let food;        // Position of the food {x, y}
+let score;       // Current score
+let best = 0;    // All-time best score (in this session)
+let gameLoop;    // Reference to setInterval so we can clear it
+let paused;      // Boolean — is the game paused?
+let running;     // Boolean — is a game currently active?
+
+// Colors used for drawing
+const COLOR = {
+  head:    '#7f77dd',   // snake head — purple
+  body:    '#3c3489',   // snake body — dark purple
+  food:    '#d85a30',   // food — orange/coral
+  grid:    '#1a1a1a',   // empty cell background
+  overlay: 'rgba(0,0,0,0.6)'  // semi-transparent overlay for game-over
+};
+
+
+// ── b. DRAWING FUNCTIONS ───────────────────────────────────────────
+
+// Draw a single rounded rectangle cell at grid position (x, y)
+function drawCell(x, y, color, radius = 3) {
+  const px = x * CELL + GAP;   // pixel X (with gap offset)
+  const py = y * CELL + GAP;   // pixel Y (with gap offset)
+  const size = CELL - GAP * 2; // cell size minus gaps
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(px, py, size, size, radius);
+  ctx.fill();
+}
+
+// Draw the entire frame — called after every game step
+function draw() {
+  // Clear the canvas with background color
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Draw every grid cell (empty cells)
+  for (let x = 0; x < COLS; x++)
+    for (let y = 0; y < ROWS; y++)
+      drawCell(x, y, COLOR.grid, 2);
+
+  // Draw the snake — head is index 0, rest is body
+  snake.forEach((seg, i) => {
+    const color  = i === 0 ? COLOR.head : COLOR.body;
+    const radius = i === 0 ? 6 : 3;   // head has bigger rounding
+    drawCell(seg.x, seg.y, color, radius);
+  });
+
+  // Draw the food as a circle (not a square)
+  const fx = food.x * CELL + CELL / 2;   // center X in pixels
+  const fy = food.y * CELL + CELL / 2;   // center Y in pixels
+  ctx.fillStyle = COLOR.food;
+  ctx.beginPath();
+  ctx.arc(fx, fy, CELL / 2 - 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // If not running, draw a game-over / welcome overlay
+  if (!running) {
+    ctx.fillStyle = COLOR.overlay;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.font = '600 22px Courier New';
+    ctx.fillText(score > 0 ? 'GAME OVER' : 'SNAKE', canvas.width / 2, canvas.height / 2 - 16);
+
+    ctx.font = '14px Courier New';
+    ctx.fillStyle = '#aaa';
+    const sub = score > 0 ? `Score: ${score}  |  Best: ${best}` : 'Press Start to play';
+    ctx.fillText(sub, canvas.width / 2, canvas.height / 2 + 16);
+  }
+}
+
+
+// ── c. GAME LOOP ───────────────────────────────────────────────────
+
+// Place food at a random empty cell (not on the snake)
+function spawnFood() {
+  let pos;
+  do {
+    pos = {
+      x: Math.floor(Math.random() * COLS),
+      y: Math.floor(Math.random() * ROWS)
+    };
+  } while (snake.some(s => s.x === pos.x && s.y === pos.y));
+  food = pos;
+}
+
+// Calculate speed (ms per tick) based on current score
+// Higher score → higher level → faster speed
+function getSpeed() {
+  const level = Math.floor(score / 5) + 1;    // level up every 5 points
+  document.getElementById('level').textContent = level;
+  return Math.max(80, 200 - (level - 1) * 15); // min 80ms, starts at 200ms
+}
+
+// Set up initial game state
+function init() {
+  // Snake starts as 3 segments pointing right at center
+  snake   = [{ x: 9, y: 9 }, { x: 8, y: 9 }, { x: 7, y: 9 }];
+  dir     = { x: 1, y: 0 };   // moving right
+  nextDir = { x: 1, y: 0 };
+  score   = 0;
+  running = true;
+  paused  = false;
+
+  document.getElementById('score').textContent = 0;
+  document.getElementById('level').textContent = 1;
+
+  spawnFood();
+}
+
+// One game step — called repeatedly by setInterval
+function step() {
+  // Apply buffered direction (prevents reversing into yourself)
+  dir = { ...nextDir };
+
+  // Calculate new head position
+  const head = {
+    x: snake[0].x + dir.x,
+    y: snake[0].y + dir.y
+  };
+
+  // ── Collision Detection ──────────────────────────────────────
+  // Hit a wall?
+  const hitWall = head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS;
+  // Hit itself?
+  const hitSelf = snake.some(s => s.x === head.x && s.y === head.y);
+
+  if (hitWall || hitSelf) {
+    // Game over!
+    running = false;
+    clearInterval(gameLoop);
+    document.getElementById('msg').textContent = `Game over! Score: ${score}`;
+    document.getElementById('startBtn').textContent = 'Restart';
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('pauseBtn').disabled = true;
+    draw();
+    return;
+  }
+
+  // ── Move the Snake ───────────────────────────────────────────
+  // Add new head to the front of the array
+  snake.unshift(head);
+
+  // Did we eat the food?
+  if (head.x === food.x && head.y === food.y) {
+    // Grow: don't remove the tail this tick
+    score++;
+    if (score > best) {
+      best = score;
+      document.getElementById('best').textContent = best;
+    }
+    document.getElementById('score').textContent = score;
+
+    spawnFood();                       // place new food
+    clearInterval(gameLoop);           // restart loop at new speed
+    gameLoop = setInterval(step, getSpeed());
+  } else {
+    // No food: remove the tail (snake moves forward without growing)
+    snake.pop();
+  }
+
+  draw(); // re-render the board
+}
+
+
+// ── d. INPUT HANDLING ──────────────────────────────────────────────
+
+// Map keyboard arrow keys to direction vectors
+const KEY_TO_DIR = {
+  ArrowUp:    { x:  0, y: -1 },
+  ArrowDown:  { x:  0, y:  1 },
+  ArrowLeft:  { x: -1, y:  0 },
+  ArrowRight: { x:  1, y:  0 }
+};
+
+document.addEventListener('keydown', e => {
+  const d = KEY_TO_DIR[e.key];
+  if (!d) return;                        // not an arrow key
+
+  // Prevent reversing (can't go opposite of current direction)
+  const isReverse = d.x === -dir.x && d.y === -dir.y;
+  if (!isReverse) nextDir = d;          // buffer the direction
+
+  if (!running) startGame();            // auto-start on first key press
+  e.preventDefault();                   // prevent page scrolling
+});
+
+// On-screen arrow button helpers
+function setDir(dx, dy) {
+  const isReverse = dx === -dir.x && dy === -dir.y;
+  if (!isReverse) nextDir = { x: dx, y: dy };
+  if (!running) startGame();
+}
+
+document.getElementById('up').addEventListener('click',    () => setDir( 0, -1));
+document.getElementById('down').addEventListener('click',  () => setDir( 0,  1));
+document.getElementById('left').addEventListener('click',  () => setDir(-1,  0));
+document.getElementById('right').addEventListener('click', () => setDir( 1,  0));
+
+
+// ── e. START / PAUSE / RESTART ─────────────────────────────────────
+
+function startGame() {
+  clearInterval(gameLoop);          // clear any running loop
+  init();                           // reset state
+  draw();                           // draw initial frame
+  document.getElementById('msg').textContent         = 'Use arrow keys or buttons below';
+  document.getElementById('startBtn').textContent    = 'Restart';
+  document.getElementById('pauseBtn').disabled       = false;
+  document.getElementById('pauseBtn').textContent    = 'Pause';
+
+  // Start the game loop — step() runs every N milliseconds
+  gameLoop = setInterval(step, getSpeed());
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  if (!running) return;
+  paused = !paused;
+
+  if (paused) {
+    clearInterval(gameLoop);
+    document.getElementById('pauseBtn').textContent = 'Resume';
+    document.getElementById('msg').textContent = 'Paused — press Resume to continue';
+  } else {
+    gameLoop = setInterval(step, getSpeed());
+    document.getElementById('pauseBtn').textContent = 'Pause';
+    document.getElementById('msg').textContent = 'Use arrow keys or buttons below';
+  }
+});
+
+
+// Draw the welcome screen when the page first loads
+draw();
+</script>
+
+</body>
+</html>
