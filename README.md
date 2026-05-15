@@ -9,7 +9,8 @@ This project features smooth gameplay, dark UI aesthetics, responsive controls, 
 
 ## Main Interface
 
-![Snake Game Preview](assets/preview.png)
+<img width="1200" height="900" alt="collage" src="https://github.com/user-attachments/assets/08f5b908-447b-4218-83a9-75b08e5fecf9" />
+
 
 ---
 
